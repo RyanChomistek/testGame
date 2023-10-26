@@ -12,6 +12,7 @@ use bevy_prng::ChaCha8Rng;
 const BACKGROUND_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
 const BALL_COLOR: Color = Color::rgb(1.0, 0.5, 0.5);
 const PADDLE_COLOR: Color = Color::rgb(0.3, 0.3, 0.7);
+const SUN_COLOR: Color = Color::rgb(0.3, 0.3, 0.0);
 
 const BALL_STARTING_POSITION: Vec3 = Vec3::new(0.0, 0.0, 1.0);
 const BALL_SIZE: Vec3 = Vec3::new(30.0, 30.0, 0.0);
@@ -52,19 +53,30 @@ fn setup(
         //Body{vel: Vec3::ZERO, mass: 1.0}
     ));
 
+    commands.spawn((
+        MaterialMesh2dBundle {
+            mesh: meshes.add(shape::Circle::default().into()).into(),
+            material: materials.add(ColorMaterial::from(SUN_COLOR)),
+            transform:  Transform::from_translation(Vec3::ZERO).with_scale(Vec3::new(200.0, 200.0, 0.0)),
+            ..default()
+        },
+        Body{vel: Vec3::ZERO, mass: 100000.0}
+    ));
+
     for _ in 0..10
     {
         let mass = (rng.next_u32() as i32 % 200 + 15) as f32;
 
         let transform = Transform::from_translation(Vec3::new(
-            (rng.next_u32() as i32 % 1000).abs() as f32,
-            (rng.next_u32() as i32 % 1000).abs() as f32,
+            (rng.next_u32() as i32 % 500).abs() as f32,
+            (rng.next_u32() as i32 % 500).abs() as f32,
             1.0)).with_scale(Vec3::new(mass, mass, 0.0));
 
+        let vel_scale = 100;
         let vel = Vec3::new(
-            (rng.next_u32() as i32 % 3) as f32,
-            (rng.next_u32() as i32 % 3) as f32,
-            1.0);
+            (rng.next_u32() as i32 % vel_scale) as f32,
+            (rng.next_u32() as i32 % vel_scale) as f32,
+            0.0);
 
         commands.spawn((
             MaterialMesh2dBundle {
@@ -73,7 +85,7 @@ fn setup(
                 transform: transform,
                 ..default()
             },
-            Body{vel: Vec3::ZERO, mass: 1.0}
+            Body{vel: vel, mass: mass}
         ));
     }
 }
@@ -115,16 +127,29 @@ fn camera_chase(
     camera_transform.translation = player_transform.translation;
 }
 
+
+
 fn body_interactions(
     mut currentBodyQuery: Query<(&Transform, &mut Body)>,
     time_step: Res<FixedTime>,
 )
 {
+    // TODO I think this loop is going over every object to every object, so some iterations are self to self causing the calc to get weird
     let mut iter = currentBodyQuery.iter_combinations_mut();
-    while let Some([(transform, mut body), (transform_other, body_other)]) = iter.fetch_next() {
-        let distance_sq = (transform.translation - transform_other.translation).length_squared();
-        let f = (GRAVITY_CONSTANT * body.mass * body_other.mass) / distance_sq;
-        body.vel += f * time_step.period.as_secs_f32();
+    while let Some([(transform, mut body), (transform_other, mut body_other)]) = iter.fetch_next() {
+        let mut delta =  transform_other.translation - transform.translation ;
+        delta.z = 0.0;
+        let distance_sq = delta.length_squared();
+
+        let f1 = (GRAVITY_CONSTANT * body_other.mass) / distance_sq;
+        let a1 = delta.normalize() * f1;
+        body.vel += a1 * time_step.period.as_secs_f32();
+
+        let f2 = (GRAVITY_CONSTANT * body.mass) / distance_sq;
+        let a2 = -1.0 * delta.normalize() * f2;
+        body_other.vel += a2 * time_step.period.as_secs_f32();
+
+        println!("{} {} {} {} {}", distance_sq, body.mass, body_other.mass, a1.length(), a2.length());
     }
 }
 
